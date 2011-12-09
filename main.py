@@ -27,8 +27,11 @@ import helpers
 class MainHandler(webapp.RequestHandler):
     def get(self):
 		people = []
+		# gets the Lanyrd URL
 		lanyrd = self.request.get("lanyrd")
+		# gets the number of winners
 		number = self.request.get("number")
+		# casts the number to an int, defaults to 5 randoms if no number specified
 		if number:
 			try:
 				number = int(number)
@@ -36,27 +39,41 @@ class MainHandler(webapp.RequestHandler):
 				number = 5
 		else:
 			number = 5
+		# does the YQL thing to get the people tracking on Lanyrd
 		yqlquery = "select href from html where url=\""+ lanyrd +"\" and xpath=\"//div[@class='trackers-placeholder placeholder']/ul/li/a\""
 		logging.warn(yqlquery)
+		# need to put some handling in here for when there are no trackers, assumes that there are
 		results = helpers.do_yql(yqlquery)["query"]["results"]["a"]
-		maxrandoms = (len(results) - 1) * number
-		maxvalue = len(results) - 1
-		randomquery = "http://www.random.org/integers/?num=" + str(maxrandoms) + "&min=0&max="+ str(maxvalue) +"&col=1&base=10&format=plain&rnd=new"
-		result = urlfetch.fetch(randomquery)
-		if result.status_code == 200:
-			randoms = result.content.split("\n")
-			self.response.out.write("Array of "+ str(maxrandoms) +" random numbers from Random.org<br /><br />" + str(randoms) + "<br /><br />Selection of "+ str(number)+ " random trackers from "+ str(len(results)) + " of " + lanyrd +":<br /><br />")
-			for i in randoms:
-				if len(people) < number:
-					try:
-						name = results[int(i)]["href"].replace("/profile/", "").replace("/", "")
-						if name not in people:
-							people.append(name)
-							self.response.out.write(name + "<br />")
-					except:
-						self.response.out.write("<br />")
-				else:
-					break
+		if results:
+			# gets a lot more random numbers than needed, but useful where small sample sets to avoid collisions, needs optimising for when there are a big number of trackers or a large number of randoms needed, or god forbid both
+			maxrandoms = (len(results) - 1) * number
+			maxvalue = len(results) - 1
+			# build query for Random.org
+			randomquery = "http://www.random.org/integers/?num=" + str(maxrandoms) + "&min=0&max="+ str(maxvalue) +"&col=1&base=10&format=plain&rnd=new"
+			# and go fetch it
+			result = urlfetch.fetch(randomquery)
+			if result.status_code == 200:
+				# each number is on a new line, so split into an array, sadly it'll have 1 item left over, TODO fix trailing \n
+				randoms = result.content.split("\n")
+				# put something out on top of page to show how many numbers and for true transparency give the array of random numbers
+				self.response.out.write("<div>Array of "+ str(maxrandoms) +" random numbers from Random.org</div><hr /><div>" + str(randoms) + "</div><hr /><div>Selection of "+ str(number)+ " random trackers from "+ str(len(results)) + " of " + lanyrd +":</div><br />")
+				# iterate throguh random numbers
+				for i in randoms:
+					# iterate through the random numbers
+					if len(people) < number:
+						# only parse if we haven't picked the n random people
+						try:
+							# here as a horrible hack for the trailing \n TODO clean up
+							name = results[int(i)]["href"].replace("/profile/", "").replace("/", "")
+							# check to see if person has been picked, greater chance in small sample sets
+							if name not in people:
+								# if they're not there add them to the array and display on page
+								people.append(name)
+								self.response.out.write("<div>" + name + "</div>")
+						except:
+							i = "NaN"
+					else:
+						break
 
 def main():
     application = webapp.WSGIApplication([('/', MainHandler)],
